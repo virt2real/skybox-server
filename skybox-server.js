@@ -12,6 +12,7 @@ var currentPlayList;
 console.log('Skybox Server v.0.0.1');
 
 var fs = require('fs');
+var exec = require('child_process').exec;
 
 /********************************************************
 
@@ -141,8 +142,15 @@ function parseClientMessage(message, socket) {
 		return;
 	}
 
+	var clientAddr = socket.conn.remoteAddress;
+	try {
+		/// get clean ip from remoteAddress which looks like this "::ffff:192.168.1.50"
+		var addrParts = clientAddr.split(":");
+		clientAddr = addrParts[addrParts.length - 1];
+	} catch (e) {}
+
 	console.log();
-	console.log("New client message: " + json.command);
+	console.log("New client message from " + clientAddr + ": " + json.command);
 
 	switch (json.command) {
 
@@ -151,6 +159,9 @@ function parseClientMessage(message, socket) {
 			/// {"command":"addDevice","deviceId":"66a86b57-b292-3957-9fc9-4041d5e1f841","deviceName":"Oculus Pacific","deviceType":"vr","showLoginCode":true}
 
 			socket.sendCustom({"command":"addDeviceResult","success":true,"version":"9","os":"win","isLoggedIn":true});
+
+			console.log('Added device ' + json.deviceName + ', ID ' + json.deviceId + ' host ' + clientAddr);
+			
 		break;
 
 		case "getMediaList":
@@ -387,11 +398,23 @@ function parseClientMessage(message, socket) {
 
 			socket.sendCustom({"deviceId":json.deviceId,"command":"activeSetVRSetting","settingCode":5});
 
+
+			/// Specific actions for streams on StereoPi
+			switch (json.id) {
+				case "livestream-mpegts":
+					/// Need to start UDP MPEG-TS streaming into client
+					exec('echo ' + clientAddr + ' > /tmp/skybox.host && killall -q gst-launch-1.0 raspivid', function(err, stdout, stderr) {});
+				break;
+			}
+
 		break;
 
 		case "stop":
 			/// Request:
 			/// {"command":"stop","deviceId":"66a86b57-b292-3957-9fc9-4041d5e1f841"}
+
+			/// Specific action for streams on StereoPi, stop live streaming			
+			exec('rm /tmp/skybox.host && killall -q gst-launch-1.0 raspivid', function(err, stdout, stderr) {});
 		break;
 
 		case "setTime":
@@ -402,6 +425,9 @@ function parseClientMessage(message, socket) {
 		case "disconnect":
 			/// Request:
 			/// {"command":"disconnect"}
+
+			/// Specific action for streams on StereoPi, stop live streaming			
+			exec('rm /tmp/skybox.host && killall -q gst-launch-1.0 raspivid', function(err, stdout, stderr) {});
 		break;
 
 		default:
